@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Télécharger les pièces jointes</title>
+    <link rel="stylesheet" href="https://p.trellocdn.com/power-up.min.css">
+    <script src="https://p.trellocdn.com/power-up.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            padding: 12px;
+            margin: 0;
+            background: #fff;
+        }
+        .info {
+            margin-bottom: 12px;
+            padding: 8px;
+            background: #f4f5f7;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .count {
+            font-weight: bold;
+            color: #0079bf;
+        }
+        .btn-download {
+            width: 100%;
+            padding: 10px 16px;
+            background: #0079bf;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .btn-download:hover {
+            background: #026aa7;
+        }
+        .btn-download:disabled {
+            background: #a0a0a0;
+            cursor: not-allowed;
+        }
+        .progress {
+            margin-top: 12px;
+            font-size: 13px;
+            color: #5e6c84;
+            text-align: center;
+        }
+        .error {
+            color: #eb5a46;
+            margin-top: 8px;
+            font-size: 13px;
+        }
+        .success {
+            color: #61bd4f;
+            margin-top: 8px;
+            font-size: 13px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="info">
+        <span id="attachmentInfo">Chargement...</span>
+    </div>
+    <button id="downloadBtn" class="btn-download" disabled>
+        📥 Télécharger en ZIP
+    </button>
+    <div id="progress" class="progress" style="display: none;"></div>
+    <div id="error" class="error" style="display: none;"></div>
+    <div id="success" class="success" style="display: none;"></div>
+
+    <script>
+        // Fonction pour nettoyer le nom de fichier
+        function sanitizeFileName(name) {
+            return name.replace(/[<>:"/\\|?*]/g, '_').substring(0, 100);
+        }
+
+        // Fonction pour télécharger un fichier
+        async function fetchAttachment(url) {
+            try {
+                const response = await fetch(url, { method: 'GET', mode: 'cors' });
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                return await response.blob();
+            } catch (error) {
+                console.error('Erreur:', url, error);
+                return null;
+            }
+        }
+
+        // Variables globales
+        var t = TrelloPowerUp.iframe();
+        var cardAttachments = [];
+        var cardName = '';
+
+        // Initialisation
+        t.render(function() {
+            t.card('id', 'name', 'attachments').then(function(card) {
+                cardName = card.name;
+                var attachments = card.attachments || [];
+                
+                // Filtrer uniquement les vrais fichiers uploadés
+                cardAttachments = attachments.filter(function(att) {
+                    return att.isUpload === true;
+                });
+                
+                var infoEl = document.getElementById('attachmentInfo');
+                var btnEl = document.getElementById('downloadBtn');
+                
+                if (cardAttachments.length === 0) {
+                    infoEl.innerHTML = '❌ Aucun fichier uploadé sur cette carte.';
+                    btnEl.style.display = 'none';
+                } else {
+                    infoEl.innerHTML = '📎 <span class="count">' + cardAttachments.length + '</span> fichier(s) à télécharger';
+                    btnEl.disabled = false;
+                }
+            });
+        });
+
+        // Fonction de téléchargement
+        async function startDownload() {
+            var btnEl = document.getElementById('downloadBtn');
+            var progressEl = document.getElementById('progress');
+            var errorEl = document.getElementById('error');
+            var successEl = document.getElementById('success');
+            
+            btnEl.disabled = true;
+            btnEl.textContent = '⏳ Téléchargement...';
+            progressEl.style.display = 'block';
+            errorEl.style.display = 'none';
+            successEl.style.display = 'none';
+            
+            try {
+                var zip = new JSZip();
+                var successCount = 0;
+                var errorCount = 0;
+                var total = cardAttachments.length;
+                
+                for (var i = 0; i < cardAttachments.length; i++) {
+                    var att = cardAttachments[i];
+                    progressEl.textContent = 'Téléchargement ' + (i + 1) + '/' + total + '...';
+                    
+                    var blob = await fetchAttachment(att.url);
+                    
+                    if (blob && blob.size > 0) {
+                        var fileName = sanitizeFileName(att.name || 'fichier_' + i);
+                        
+                        // Éviter les doublons
+                        var baseName = fileName;
+                        var counter = 1;
+                        while (zip.file(fileName)) {
+                            var parts = baseName.split('.');
+                            if (parts.length > 1) {
+                                var ext = parts.pop();
+                                fileName = parts.join('.') + '_' + counter + '.' + ext;
+                            } else {
+                                fileName = baseName + '_' + counter;
+                            }
+                            counter++;
+                        }
+                        
+                        zip.file(fileName, blob);
+                        successCount++;
+                    } else {
+                        errorCount++;
+                    }
+                }
+                
+                if (successCount === 0) {
+                    throw new Error('Aucun fichier n\'a pu être téléchargé');
+                }
+                
+                progressEl.textContent = 'Création du ZIP...';
+                
+                var zipBlob = await zip.generateAsync({ 
+                    type: 'blob',
+                    compression: 'DEFLATE',
+                    compressionOptions: { level: 6 }
+                });
+                
+                var zipFileName = sanitizeFileName(cardName || 'carte') + '_pieces_jointes.zip';
+                saveAs(zipBlob, zipFileName);
+                
+                progressEl.style.display = 'none';
+                successEl.style.display = 'block';
+                successEl.textContent = '✅ ' + successCount + ' fichier(s) téléchargé(s) !';
+                
+                if (errorCount > 0) {
+                    successEl.textContent += ' (' + errorCount + ' erreur(s))';
+                }
+                
+                btnEl.textContent = '✅ Terminé !';
+                
+                // Fermer après 2 secondes
+                setTimeout(function() {
+                    t.closePopup();
+                }, 2000);
+                
+            } catch (error) {
+                progressEl.style.display = 'none';
+                errorEl.style.display = 'block';
+                errorEl.textContent = '❌ Erreur: ' + error.message;
+                btnEl.disabled = false;
+                btnEl.textContent = '📥 Réessayer';
+            }
+        }
+
+        // Event listener
+        document.getElementById('downloadBtn').addEventListener('click', startDownload);
+    </script>
+</body>
+</html>
