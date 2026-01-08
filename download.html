@@ -4,8 +4,6 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Téléchargement des pièces jointes</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -35,40 +33,20 @@
         .status.loading { background: #e4f0f6; color: #0079bf; }
         .status.success { background: #e4f7e4; color: #1d7a1d; }
         .status.error { background: #fce4e4; color: #c9372c; }
-        .progress-bar {
-            width: 100%;
-            height: 8px;
-            background: #dfe1e6;
-            border-radius: 4px;
-            overflow: hidden;
-            margin: 15px 0;
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #0079bf;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+            vertical-align: middle;
         }
-        .progress-fill {
-            height: 100%;
-            background: #0079bf;
-            transition: width 0.3s;
-            width: 0%;
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
-        .progress-text {
-            font-size: 13px;
-            color: #5e6c84;
-            text-align: center;
-        }
-        .file-list {
-            max-height: 200px;
-            overflow-y: auto;
-            border: 1px solid #dfe1e6;
-            border-radius: 4px;
-            margin-top: 15px;
-        }
-        .file-item {
-            padding: 8px 12px;
-            border-bottom: 1px solid #eee;
-            font-size: 13px;
-        }
-        .file-item:last-child { border-bottom: none; }
-        .file-item.done { color: #1d7a1d; }
-        .file-item.error { color: #c9372c; }
         .btn {
             display: inline-block;
             padding: 10px 20px;
@@ -80,37 +58,43 @@
             cursor: pointer;
             margin-right: 10px;
             margin-top: 15px;
+            text-decoration: none;
         }
         .btn:hover { background: #026aa7; }
         .btn.secondary { background: #dfe1e6; color: #172b4d; }
+        .info {
+            font-size: 12px;
+            color: #5e6c84;
+            margin-top: 15px;
+        }
     </style>
 </head>
 <body>
     <div class="card">
         <h1>📥 Téléchargement des pièces jointes</h1>
-        <div id="status" class="status loading">Initialisation...</div>
-        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
-        <div id="progressText" class="progress-text"></div>
-        <div id="fileList" class="file-list" style="display:none;"></div>
+        <div id="status" class="status loading">
+            <span class="spinner"></span>
+            Initialisation...
+        </div>
         <div id="actions"></div>
+        <div id="info" class="info"></div>
     </div>
 
     <script>
         var API_KEY = '28d80811d05a80d515472323f02aab53';
         var APP_NAME = 'Attachments Downloader';
         var RETURN_URL = window.location.href.split('#')[0];
-        var PROXY_URL = 'https://trello-proxy.joprowork.workers.dev/?url=';
+        var WORKER_URL = 'https://trello-proxy.joprowork.workers.dev/';
         
         var statusEl = document.getElementById('status');
-        var progressFill = document.getElementById('progressFill');
-        var progressText = document.getElementById('progressText');
-        var fileListEl = document.getElementById('fileList');
         var actionsEl = document.getElementById('actions');
+        var infoEl = document.getElementById('info');
         
         var urlParams = new URLSearchParams(window.location.search);
         var cardId = urlParams.get('cardId');
         var cardName = urlParams.get('cardName') || 'carte';
         
+        // Récupérer le token
         var token = null;
         var hash = window.location.hash;
         if (hash && hash.indexOf('token=') !== -1) {
@@ -121,14 +105,10 @@
             token = localStorage.getItem('trello_token');
         }
         
-        function setStatus(msg, type) {
-            statusEl.textContent = msg;
+        function setStatus(msg, type, showSpinner) {
+            var spinner = showSpinner ? '<span class="spinner"></span>' : '';
+            statusEl.innerHTML = spinner + msg;
             statusEl.className = 'status ' + type;
-        }
-        
-        function setProgress(current, total, text) {
-            progressFill.style.width = (total > 0 ? (current/total)*100 : 0) + '%';
-            progressText.textContent = text || '';
         }
         
         function authorize() {
@@ -138,135 +118,76 @@
                 '&return_url=' + encodeURIComponent(RETURN_URL);
         }
         
-        async function getAttachments() {
-            var r = await fetch('https://api.trello.com/1/cards/' + cardId + '/attachments?key=' + API_KEY + '&token=' + token);
-            if (!r.ok) {
-                if (r.status === 401) {
-                    localStorage.removeItem('trello_token');
-                    throw new Error('Token expiré');
-                }
-                throw new Error('Erreur API');
-            }
-            return r.json();
-        }
-        
-        async function downloadFile(attachment) {
-            try {
-                // Utiliser l'API officielle de téléchargement Trello
-                var downloadUrl = 'https://api.trello.com/1/cards/' + cardId + 
-                    '/attachments/' + attachment.id + 
-                    '/download/' + encodeURIComponent(attachment.name) +
-                    '?key=' + API_KEY + '&token=' + token;
-                
-                // Passer par le proxy CORS
-                var proxyUrl = PROXY_URL + encodeURIComponent(downloadUrl);
-                var r = await fetch(proxyUrl);
-                
-                if (r.ok) {
-                    var blob = await r.blob();
-                    if (blob.size > 0) {
-                        return blob;
-                    }
-                }
-            } catch(e) {
-                console.error('Erreur téléchargement:', e);
-            }
-            return null;
-        }
-        
         function sanitize(name) {
             return name.replace(/[<>:"/\\|?*]/g, '_').substring(0, 200);
         }
         
+        async function downloadZip() {
+            setStatus('Préparation du téléchargement...', 'loading', true);
+            infoEl.textContent = 'Le serveur télécharge et compresse vos fichiers. Cela peut prendre quelques instants...';
+            
+            try {
+                // Appeler le Worker qui fait tout le travail
+                var workerUrl = WORKER_URL + '?cardId=' + cardId + '&token=' + token + '&key=' + API_KEY;
+                
+                setStatus('Téléchargement en cours...', 'loading', true);
+                
+                var response = await fetch(workerUrl);
+                
+                if (!response.ok) {
+                    var errorText = await response.text();
+                    throw new Error(errorText || 'Erreur serveur: ' + response.status);
+                }
+                
+                // Récupérer le ZIP
+                var blob = await response.blob();
+                
+                if (blob.size < 100) {
+                    throw new Error('Fichier ZIP vide ou invalide');
+                }
+                
+                // Télécharger le fichier
+                var zipName = sanitize(decodeURIComponent(cardName)) + '.zip';
+                var url = URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                a.href = url;
+                a.download = zipName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                setStatus('✅ Téléchargement terminé !', 'success', false);
+                infoEl.textContent = '';
+                actionsEl.innerHTML = '<button class="btn secondary" onclick="window.close()">Fermer</button>';
+                
+            } catch (e) {
+                console.error('Erreur:', e);
+                setStatus('❌ ' + e.message, 'error', false);
+                infoEl.textContent = '';
+                
+                if (e.message.indexOf('401') !== -1 || e.message.indexOf('Token') !== -1) {
+                    actionsEl.innerHTML = '<button class="btn" onclick="localStorage.removeItem(\'trello_token\'); authorize();">Se reconnecter à Trello</button>';
+                } else {
+                    actionsEl.innerHTML = '<button class="btn" onclick="location.reload();">Réessayer</button><button class="btn secondary" onclick="window.close()">Fermer</button>';
+                }
+            }
+        }
+        
         async function main() {
             if (!cardId) {
-                setStatus('Erreur: ID carte manquant', 'error');
+                setStatus('❌ Erreur: ID de carte manquant', 'error', false);
                 return;
             }
             
             if (!token) {
-                setStatus('Connexion Trello requise...', 'loading');
+                setStatus('Connexion à Trello requise...', 'loading', true);
                 setTimeout(authorize, 1500);
                 return;
             }
             
-            try {
-                setStatus('Récupération des fichiers...', 'loading');
-                var attachments = await getAttachments();
-                
-                // Filtrer pour ne garder que les vrais fichiers uploadés
-                var files = attachments.filter(function(a) { 
-                    return a.isUpload === true || (a.bytes && a.bytes > 0);
-                });
-                
-                if (files.length === 0) {
-                    setStatus('Aucun fichier trouvé', 'error');
-                    return;
-                }
-                
-                fileListEl.style.display = 'block';
-                fileListEl.innerHTML = files.map(function(f) {
-                    return '<div class="file-item">⏳ ' + (f.name || 'fichier') + '</div>';
-                }).join('');
-                
-                setStatus('Téléchargement de ' + files.length + ' fichier(s)...', 'loading');
-                
-                var zip = new JSZip();
-                var ok = 0, fail = 0;
-                var usedNames = {};
-                
-                for (var i = 0; i < files.length; i++) {
-                    var f = files[i];
-                    var name = sanitize(f.name || 'fichier_' + i);
-                    
-                    if (usedNames[name]) {
-                        var parts = name.split('.');
-                        var ext = parts.length > 1 ? '.' + parts.pop() : '';
-                        name = parts.join('.') + '_' + usedNames[name] + ext;
-                    }
-                    usedNames[name] = (usedNames[name] || 0) + 1;
-                    
-                    setProgress(i+1, files.length, 'Fichier ' + (i+1) + '/' + files.length);
-                    
-                    var blob = await downloadFile(f);
-                    var items = fileListEl.querySelectorAll('.file-item');
-                    
-                    if (blob) {
-                        zip.file(name, blob);
-                        ok++;
-                        items[i].className = 'file-item done';
-                        items[i].textContent = '✅ ' + name;
-                    } else {
-                        fail++;
-                        items[i].className = 'file-item error';
-                        items[i].textContent = '❌ ' + name;
-                    }
-                }
-                
-                if (ok === 0) {
-                    setStatus('❌ Impossible de télécharger les fichiers', 'error');
-                    actionsEl.innerHTML = '<button class="btn" onclick="localStorage.removeItem(\'trello_token\'); location.reload();">Se reconnecter</button><button class="btn secondary" onclick="window.close()">Fermer</button>';
-                    return;
-                }
-                
-                setStatus('Création du ZIP...', 'loading');
-                setProgress(100, 100, 'Compression...');
-                
-                var zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
-                var zipName = sanitize(decodeURIComponent(cardName)) + '.zip';
-                saveAs(zipBlob, zipName);
-                
-                setStatus('✅ ' + ok + ' fichier(s) téléchargé(s) !' + (fail ? ' (' + fail + ' erreur(s))' : ''), 'success');
-                setProgress(100, 100, 'Terminé !');
-                actionsEl.innerHTML = '<button class="btn secondary" onclick="window.close()">Fermer</button>';
-                
-            } catch(e) {
-                console.error('Erreur:', e);
-                setStatus('Erreur: ' + e.message, 'error');
-                if (e.message.indexOf('Token') !== -1 || e.message.indexOf('API') !== -1) {
-                    actionsEl.innerHTML = '<button class="btn" onclick="localStorage.removeItem(\'trello_token\'); authorize();">Se reconnecter</button>';
-                }
-            }
+            // Lancer le téléchargement
+            downloadZip();
         }
         
         main();
