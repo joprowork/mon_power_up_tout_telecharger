@@ -45,7 +45,7 @@
             t.card('attachments').then(function(card) {
                 var attachments = card.attachments || [];
                 var fileAttachments = attachments.filter(function(att) {
-                    return att.url && (att.mimeType || att.url.includes('trello') || att.bytes > 0);
+                    return att.url && (att.mimeType || att.url.indexOf('trello') !== -1 || att.bytes > 0);
                 });
                 
                 var contentEl = document.getElementById('content');
@@ -53,13 +53,13 @@
                 if (fileAttachments.length === 0) {
                     contentEl.innerHTML = '<span class="no-files">Aucun fichier à télécharger</span>';
                 } else {
-                    contentEl.innerHTML = '<button class="download-link" id="dlBtn">📥 Télécharger ' + fileAttachments.length + ' fichier(s) en ZIP</button>';
+                    contentEl.innerHTML = '<button class="download-link" id="dlBtn">📥 Télécharger ' + fileAttachments.length + ' fichier(s)</button>';
                     
                     document.getElementById('dlBtn').addEventListener('click', function() {
                         t.popup({
                             title: 'Télécharger les pièces jointes',
                             url: 'popup.html',
-                            height: 200
+                            height: 400
                         });
                     });
                 }
