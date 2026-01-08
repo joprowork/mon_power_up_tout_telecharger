@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Téléchargement des pièces jointes</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            max-width: 500px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f4f5f7;
+            min-height: 100vh;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            margin: 0 0 20px 0;
+            font-size: 20px;
+            color: #172b4d;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .status {
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .status.loading {
+            background: #e4f0f6;
+            color: #0079bf;
+        }
+        .status.success {
+            background: #e4f7e4;
+            color: #1d7a1d;
+        }
+        .status.error {
+            background: #fce4e4;
+            color: #c9372c;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #dfe1e6;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #0079bf;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        .progress-text {
+            font-size: 13px;
+            color: #5e6c84;
+            text-align: center;
+        }
+        .file-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #dfe1e6;
+            border-radius: 4px;
+            margin-top: 15px;
+        }
+        .file-item {
+            padding: 8px 12px;
+            border-bottom: 1px solid #eee;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .file-item:last-child {
+            border-bottom: none;
+        }
+        .file-item.done {
+            color: #1d7a1d;
+        }
+        .file-item.error {
+            color: #c9372c;
+        }
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #0079bf;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .btn:hover {
+            background: #026aa7;
+        }
+        .btn.secondary {
+            background: #dfe1e6;
+            color: #172b4d;
+        }
+        .btn.secondary:hover {
+            background: #c1c7d0;
+        }
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #fff;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>📥 Téléchargement des pièces jointes</h1>
+        <div id="status" class="status loading">Initialisation...</div>
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        <div id="progressText" class="progress-text"></div>
+        <div id="fileList" class="file-list" style="display: none;"></div>
+        <div id="actions" class="actions" style="display: none;"></div>
+    </div>
+
+    <script>
+        // Configuration
+        var API_KEY = '28d80811d05a80d515472323f02aab53';
+        var APP_NAME = 'Attachments Downloader';
+        var RETURN_URL = window.location.href.split('#')[0];
+        
+        // Éléments DOM
+        var statusEl = document.getElementById('status');
+        var progressFill = document.getElementById('progressFill');
+        var progressText = document.getElementById('progressText');
+        var fileListEl = document.getElementById('fileList');
+        var actionsEl = document.getElementById('actions');
+        
+        // Récupérer les paramètres de l'URL
+        var urlParams = new URLSearchParams(window.location.search);
+        var cardId = urlParams.get('cardId');
+        var cardName = urlParams.get('cardName') || 'carte';
+        
+        // Récupérer le token depuis l'URL (après autorisation) ou localStorage
+        var token = null;
+        var hash = window.location.hash;
+        if (hash && hash.indexOf('token=') !== -1) {
+            token = hash.split('token=')[1].split('&')[0];
+            localStorage.setItem('trello_token', token);
+            // Nettoyer l'URL
+            window.history.replaceState({}, document.title, RETURN_URL);
+        } else {
+            token = localStorage.getItem('trello_token');
+        }
+        
+        // Fonction pour mettre à jour le statut
+        function setStatus(message, type) {
+            statusEl.textContent = message;
+            statusEl.className = 'status ' + type;
+        }
+        
+        // Fonction pour mettre à jour la progression
+        function setProgress(current, total, text) {
+            var percent = total > 0 ? (current / total) * 100 : 0;
+            progressFill.style.width = percent + '%';
+            progressText.textContent = text || (current + ' / ' + total);
+        }
+        
+        // Fonction pour ajouter un fichier à la liste
+        function addFileToList(name, status) {
+            var icon = status === 'done' ? '✅' : (status === 'error' ? '❌' : '⏳');
+            var item = document.createElement('div');
+            item.className = 'file-item ' + status;
+            item.innerHTML = icon + ' ' + name;
+            fileListEl.appendChild(item);
+            fileListEl.scrollTop = fileListEl.scrollHeight;
+        }
+        
+        // Fonction pour demander l'autorisation Trello
+        function authorize() {
+            var authUrl = 'https://trello.com/1/authorize?' +
+                'expiration=never' +
+                '&name=' + encodeURIComponent(APP_NAME) +
+                '&scope=read' +
+                '&response_type=token' +
+                '&key=' + API_KEY +
+                '&return_url=' + encodeURIComponent(RETURN_URL);
+            
+            window.location.href = authUrl;
+        }
+        
+        // Fonction pour récupérer les pièces jointes via l'API
+        async function getAttachments() {
+            var url = 'https://api.trello.com/1/cards/' + cardId + '/attachments?key=' + API_KEY + '&token=' + token;
+            var response = await fetch(url);
+            
+            if (!response.ok) {
+                if (response.status === 401) {
+                    localStorage.removeItem('trello_token');
+                    throw new Error('Token invalide. Veuillez vous reconnecter.');
+                }
+                throw new Error('Erreur API Trello: ' + response.status);
+            }
+            
+            return response.json();
+        }
+        
+        // Fonction pour télécharger un fichier
+        async function downloadFile(url) {
+            try {
+                // Ajouter les credentials pour les URLs Trello
+                var fetchUrl = url;
+                if (url.indexOf('trello') !== -1) {
+                    var separator = url.indexOf('?') !== -1 ? '&' : '?';
+                    fetchUrl = url + separator + 'key=' + API_KEY + '&token=' + token;
+                }
+                
+                var response = await fetch(fetchUrl);
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status);
+                }
+                return await response.blob();
+            } catch (error) {
+                console.error('Erreur téléchargement:', url, error);
+                return null;
+            }
+        }
+        
+        // Fonction pour nettoyer les noms de fichiers
+        function sanitizeFileName(name) {
+            return name.replace(/[<>:"/\\|?*]/g, '_').substring(0, 200);
+        }
+        
+        // Fonction principale
+        async function main() {
+            // Vérifier qu'on a un cardId
+            if (!cardId) {
+                setStatus('Erreur: ID de carte manquant', 'error');
+                return;
+            }
+            
+            // Vérifier qu'on a un token
+            if (!token) {
+                setStatus('Connexion à Trello requise...', 'loading');
+                setTimeout(authorize, 1000);
+                return;
+            }
+            
+            try {
+                // Récupérer les pièces jointes
+                setStatus('Récupération des pièces jointes...', 'loading');
+                var attachments = await getAttachments();
+                
+                // Filtrer les vrais fichiers
+                var files = attachments.filter(function(att) {
+                    return att.url && (att.mimeType || att.url.indexOf('trello') !== -1 || att.bytes > 0);
+                });
+                
+                if (files.length === 0) {
+                    setStatus('Aucun fichier à télécharger', 'error');
+                    return;
+                }
+                
+                // Afficher la liste des fichiers
+                fileListEl.style.display = 'block';
+                setStatus('Téléchargement de ' + files.length + ' fichier(s)...', 'loading');
+                
+                // Créer le ZIP
+                var zip = new JSZip();
+                var downloaded = 0;
+                var errors = 0;
+                var fileNames = {};
+                
+                for (var i = 0; i < files.length; i++) {
+                    var file = files[i];
+                    var fileName = sanitizeFileName(file.name || 'fichier_' + i);
+                    
+                    // Éviter les doublons
+                    if (fileNames[fileName]) {
+                        var parts = fileName.split('.');
+                        if (parts.length > 1) {
+                            var ext = parts.pop();
+                            fileName = parts.join('.') + '_' + fileNames[fileName] + '.' + ext;
+                        } else {
+                            fileName = fileName + '_' + fileNames[fileName];
+                        }
+                    }
+                    fileNames[fileName] = (fileNames[fileName] || 0) + 1;
+                    
+                    addFileToList(fileName, 'loading');
+                    setProgress(i, files.length, 'Téléchargement de ' + fileName + '...');
+                    
+                    var blob = await downloadFile(file.url);
+                    
+                    if (blob && blob.size > 0) {
+                        zip.file(fileName, blob);
+                        downloaded++;
+                        // Mettre à jour le dernier élément de la liste
+                        var items = fileListEl.querySelectorAll('.file-item');
+                        items[items.length - 1].className = 'file-item done';
+                        items[items.length - 1].innerHTML = '✅ ' + fileName;
+                    } else {
+                        errors++;
+                        var items = fileListEl.querySelectorAll('.file-item');
+                        items[items.length - 1].className = 'file-item error';
+                        items[items.length - 1].innerHTML = '❌ ' + fileName;
+                    }
+                }
+                
+                if (downloaded === 0) {
+                    setStatus('Aucun fichier n\'a pu être téléchargé', 'error');
+                    return;
+                }
+                
+                // Générer le ZIP
+                setStatus('Création du fichier ZIP...', 'loading');
+                setProgress(100, 100, 'Compression en cours...');
+                
+                var zipBlob = await zip.generateAsync({
+                    type: 'blob',
+                    compression: 'DEFLATE',
+                    compressionOptions: { level: 6 }
+                });
+                
+                // Télécharger le ZIP
+                var zipFileName = sanitizeFileName(decodeURIComponent(cardName)) + '_pieces_jointes.zip';
+                saveAs(zipBlob, zipFileName);
+                
+                // Succès !
+                var message = '✅ ' + downloaded + ' fichier(s) téléchargé(s) !';
+                if (errors > 0) {
+                    message += ' (' + errors + ' erreur(s))';
+                }
+                setStatus(message, 'success');
+                setProgress(100, 100, 'Terminé !');
+                
+                // Afficher les boutons d'action
+                actionsEl.style.display = 'flex';
+                actionsEl.innerHTML = 
+                    '<button class="btn secondary" onclick="window.close()">Fermer cet onglet</button>';
+                
+            } catch (error) {
+                console.error('Erreur:', error);
+                setStatus('Erreur: ' + error.message, 'error');
+                
+                if (error.message.indexOf('Token invalide') !== -1) {
+                    actionsEl.style.display = 'flex';
+                    actionsEl.innerHTML = '<button class="btn" onclick="authorize()">Se reconnecter à Trello</button>';
+                }
+            }
+        }
+        
+        // Lancer le processus
+        main();
+    </script>
+</body>
+</html>

@@ -2,36 +2,48 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Section Pièces jointes</title>
+    <title>Pièces jointes</title>
     <link rel="stylesheet" href="https://p.trellocdn.com/power-up.min.css">
     <script src="https://p.trellocdn.com/power-up.min.js"></script>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            padding: 8px 0;
+            padding: 8px;
             margin: 0;
             background: transparent;
         }
-        .download-link {
+        .download-btn {
             display: inline-flex;
             align-items: center;
-            gap: 6px;
-            padding: 6px 12px;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            padding: 10px 16px;
             background: #0079bf;
             color: white;
             text-decoration: none;
-            border-radius: 3px;
+            border-radius: 4px;
             font-size: 14px;
+            font-weight: 500;
             cursor: pointer;
             border: none;
+            box-sizing: border-box;
         }
-        .download-link:hover {
+        .download-btn:hover {
             background: #026aa7;
         }
         .no-files {
             color: #5e6c84;
             font-size: 13px;
             font-style: italic;
+            text-align: center;
+            padding: 8px;
+        }
+        .info {
+            font-size: 12px;
+            color: #5e6c84;
+            text-align: center;
+            margin-top: 8px;
         }
     </style>
 </head>
@@ -40,10 +52,13 @@
 
     <script>
         var t = TrelloPowerUp.iframe();
+        var BASE_URL = 'https://joprowork.github.io/mon_power_up_tout_telecharger';
         
         t.render(function() {
-            t.card('attachments').then(function(card) {
+            t.card('id', 'name', 'attachments').then(function(card) {
                 var attachments = card.attachments || [];
+                
+                // Filtrer les fichiers uploadés
                 var fileAttachments = attachments.filter(function(att) {
                     return att.url && (att.mimeType || att.url.indexOf('trello') !== -1 || att.bytes > 0);
                 });
@@ -51,20 +66,21 @@
                 var contentEl = document.getElementById('content');
                 
                 if (fileAttachments.length === 0) {
-                    contentEl.innerHTML = '<span class="no-files">Aucun fichier à télécharger</span>';
+                    contentEl.innerHTML = '<div class="no-files">Aucun fichier à télécharger</div>';
                 } else {
-                    contentEl.innerHTML = '<button class="download-link" id="dlBtn">📥 Télécharger ' + fileAttachments.length + ' fichier(s)</button>';
+                    // Encoder les paramètres pour l'URL
+                    var cardId = encodeURIComponent(card.id);
+                    var cardName = encodeURIComponent(card.name || 'carte');
+                    var downloadUrl = BASE_URL + '/download.html?cardId=' + cardId + '&cardName=' + cardName;
                     
-                    document.getElementById('dlBtn').addEventListener('click', function() {
-                        t.popup({
-                            title: 'Télécharger les pièces jointes',
-                            url: 'popup.html',
-                            height: 400
-                        });
-                    });
+                    contentEl.innerHTML = 
+                        '<a href="' + downloadUrl + '" target="_blank" class="download-btn">' +
+                        '📥 Télécharger ' + fileAttachments.length + ' fichier(s) en ZIP' +
+                        '</a>' +
+                        '<div class="info">Un nouvel onglet va s\'ouvrir pour créer le ZIP</div>';
                 }
                 
-                t.sizeTo('#content');
+                t.sizeTo('#content').catch(function() {});
             });
         });
     </script>
