@@ -4,7 +4,7 @@
 // ============================================
 // CONFIGURATION - Remplace par ta clé API
 // ============================================
-var TRELLO_API_KEY = 'REMPLACER_PAR_TA_CLE_API';
+var TRELLO_API_KEY = '28d80811d05a80d515472323f02aab53';
 
 // Fonction pour nettoyer le nom de fichier (enlever les caractères interdits)
 function sanitizeFileName(name) {
