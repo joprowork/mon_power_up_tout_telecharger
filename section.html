@@ -58,7 +58,6 @@
             t.card('id', 'name', 'attachments').then(function(card) {
                 var attachments = card.attachments || [];
                 
-                // Filtrer les fichiers uploadés
                 var fileAttachments = attachments.filter(function(att) {
                     return att.url && (att.mimeType || att.url.indexOf('trello') !== -1 || att.bytes > 0);
                 });
@@ -68,7 +67,6 @@
                 if (fileAttachments.length === 0) {
                     contentEl.innerHTML = '<div class="no-files">Aucun fichier à télécharger</div>';
                 } else {
-                    // Encoder les paramètres pour l'URL
                     var cardId = encodeURIComponent(card.id);
                     var cardName = encodeURIComponent(card.name || 'carte');
                     var downloadUrl = BASE_URL + '/download.html?cardId=' + cardId + '&cardName=' + cardName;
