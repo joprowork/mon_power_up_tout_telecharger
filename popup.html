@@ -106,9 +106,10 @@
                 cardName = card.name;
                 var attachments = card.attachments || [];
                 
-                // Filtrer uniquement les vrais fichiers uploadés
+                // Filtrer les fichiers (exclure les liens simples sans fichier)
                 cardAttachments = attachments.filter(function(att) {
-                    return att.isUpload === true;
+                    // Garder tout ce qui a une URL de téléchargement Trello ou un mimetype
+                    return att.url && (att.mimeType || att.url.includes('trello') || att.bytes > 0);
                 });
                 
                 var infoEl = document.getElementById('attachmentInfo');

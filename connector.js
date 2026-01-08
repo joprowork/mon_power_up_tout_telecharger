@@ -45,9 +45,9 @@ async function downloadAllAttachments(t) {
             return;
         }
         
-        // Filtrer uniquement les vrais fichiers (pas les liens)
+        // Filtrer les fichiers (exclure les liens simples)
         const fileAttachments = attachments.filter(function(att) {
-            return att.isUpload === true || att.url.includes('trello-attachments');
+            return att.url && (att.mimeType || att.url.includes('trello') || att.bytes > 0);
         });
         
         if (fileAttachments.length === 0) {

@@ -45,7 +45,7 @@
             t.card('attachments').then(function(card) {
                 var attachments = card.attachments || [];
                 var fileAttachments = attachments.filter(function(att) {
-                    return att.isUpload === true;
+                    return att.url && (att.mimeType || att.url.includes('trello') || att.bytes > 0);
                 });
                 
                 var contentEl = document.getElementById('content');
